@@ -180,9 +180,38 @@
         .chat-messages::-webkit-scrollbar { width: 4px; }
         .chat-messages::-webkit-scrollbar-track { background: #fdf8ff; }
         .chat-messages::-webkit-scrollbar-thumb { background: #e5c8ff; border-radius: 2px; }
+
+
+
+        /* Chat input row */
+        .chat-input-row {
+            padding: 12px 14px;
+            border-top: 1px solid #f3eaff;
+            display: flex; gap: 8px; align-items: center;
+            background: white;
+        }
+        .chat-input-row input {
+            flex: 1; padding: 10px 16px;
+            border: 1.5px solid #e5c8ff; border-radius: 22px;
+            font-size: 13.5px; outline: none;
+            font-family: 'Segoe UI', sans-serif; color: #333;
+        }
+        .chat-input-row input:focus { border-color: #b06aed; }
+        .chat-input-row input:disabled { background: #faf7ff; color: #aaa; }
+        .chat-input-row button {
+            width: 42px; height: 42px; flex-shrink: 0;
+            background: linear-gradient(135deg, #b06aed, #e84dac);
+            border: none; border-radius: 50%;
+            color: white; font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: opacity 0.2s;
+        }
+        .chat-input-row button:hover { opacity: 0.85; }
+        .chat-input-row button:disabled { opacity: 0.45; cursor: not-allowed; }
     </style>
 </head>
 <body>
+
 <div class="chat-container">
     <div class="chat-header">
         <div class="avatar">🤖</div>
@@ -192,140 +221,132 @@
         </div>
     </div>
     <div class="chat-messages" id="messages"></div>
-    <div class="chat-buttons" id="buttons"></div>
+    <div class="chat-input-row">
+        <input type="text" id="user-input" placeholder="Nachricht eingeben..." autocomplete="off">
+        <button id="send-btn">&#10148;</button>
+    </div>
 </div>
 
 <script>
-    const answers = {};
-    let step = 0;
+    const SYSTEM_PROMPT = `Du bist ein sachlicher Outfit-Assistent. Antworte immer extrem kurz und prägnant – maximal 2-3 kurze Sätze. Keine Emojis. Kein Small Talk. Nur die notwendigen Informationen. Frage knapp nach Anlass, Farbwunsch und Stil, dann gib eine kompakte Outfitempfehlung. Antworte auf Deutsch.`;
 
-    const steps = [
-        {
-            bot: "Hallo. Anlass?",
-            key: "occasion",
-            buttons: ["Arbeit", "Party", "Date", "Alltag"]
-        },
-        {
-            bot: "Farbton?",
-            key: "color",
-            buttons: ["Dunkel", "Hell", "Bunt", "Egal"]
-        },
-        {
-            bot: "Stil?",
-            key: "style",
-            buttons: ["Casual", "Elegant", "Sportlich", "Kreativ"]
-        }
-    ];
+    const API_URL = 'https://api.openai.com/v1/chat/completions';
+    const MODEL = 'gpt-4o-mini';
+    const INITIAL_MSG = 'Hallo. Für welchen Anlass suchst du ein Outfit?';
 
-    const recommendations = {
-        Casual:    "Jeans. Weißes T-Shirt. Sneaker.",
-        Elegant:   "Blazer. Bluse/Hemd. Anzughose.",
-        Sportlich: "Jogger. Hoodie. Turnschuhe.",
-        Kreativ:   "Statement-Top. Weite Hose. Boots."
-    };
+    // ⚠️ API-Key hier eintragen (nur für kontrollierte Studienumgebung)
+    const apiKey = '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';
+    let conversationHistory = [];
+    let isBusy = false;
 
-    function addMessage(text, type) {
+    function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+
+    function addBotMessage(text) {
         const row = document.createElement('div');
-        row.className = `message-row${type === 'user' ? ' user' : ''}`;
-        if (type === 'bot') {
-            row.innerHTML = `<div class="mini-avatar">🤖</div><div class="bubble bot-bubble">${text}</div>`;
-        } else {
-            row.innerHTML = `<div class="bubble user-bubble">${text}</div>`;
-        }
+        row.className = 'message-row';
+        row.innerHTML = `<div class="mini-avatar">🤖</div><div class="bubble bot-bubble">${escapeHtml(text)}</div>`;
+        document.getElementById('messages').appendChild(row);
+        document.getElementById('messages').scrollTop = 999999;
+    }
+
+    function addUserMessage(text) {
+        const row = document.createElement('div');
+        row.className = 'message-row user';
+        row.innerHTML = `<div class="bubble user-bubble">${escapeHtml(text)}</div>`;
         document.getElementById('messages').appendChild(row);
         document.getElementById('messages').scrollTop = 999999;
     }
 
     function showTyping() {
+        if (document.getElementById('typing-indicator')) return;
         const row = document.createElement('div');
         row.className = 'typing-row';
-        row.id = 'typing';
-        row.innerHTML = `
-            <div class="mini-avatar">🤖</div>
-            <div class="typing-bubble">
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-            </div>
-        `;
+        row.id = 'typing-indicator';
+        row.innerHTML = `<div class="mini-avatar">🤖</div><div class="typing-bubble"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
         document.getElementById('messages').appendChild(row);
         document.getElementById('messages').scrollTop = 999999;
     }
 
     function removeTyping() {
-        const el = document.getElementById('typing');
+        const el = document.getElementById('typing-indicator');
         if (el) el.remove();
     }
 
-    function showButtons(labels, onClick) {
-        const area = document.getElementById('buttons');
-        area.innerHTML = '';
-        labels.forEach(label => {
-            const btn = document.createElement('button');
-            btn.className = 'choice-btn';
-            btn.textContent = label;
-            btn.onclick = () => onClick(label);
-            area.appendChild(btn);
+    async function callLLM(userMessage) {
+        conversationHistory.push({ role: 'user', content: userMessage });
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: MODEL,
+                messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...conversationHistory],
+                max_tokens: 150,
+                temperature: 0.5
+            })
         });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        const botMsg = data.choices[0].message.content.trim();
+        conversationHistory.push({ role: 'assistant', content: botMsg });
+        return botMsg;
     }
 
-    function clearButtons() {
-        document.getElementById('buttons').innerHTML = '';
+    function setInputState(disabled) {
+        isBusy = disabled;
+        document.getElementById('user-input').disabled = disabled;
+        document.getElementById('send-btn').disabled = disabled;
     }
 
-    function botSay(text, delay, callback) {
-        clearButtons();
+    async function handleSend() {
+        if (isBusy) return;
+        const input = document.getElementById('user-input');
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+        addUserMessage(text);
+        setInputState(true);
+        showTyping();
+        try {
+            const reply = await callLLM(text);
+            removeTyping();
+            addBotMessage(reply);
+        } catch (e) {
+            removeTyping();
+            addBotMessage('Fehler. API-Key prüfen.');
+            console.error(e);
+        } finally {
+            setInputState(false);
+            document.getElementById('user-input').focus();
+        }
+    }
+
+    function startChat() {
+        conversationHistory = [];
+        showTyping();
         setTimeout(() => {
-            showTyping();
-            setTimeout(() => {
-                removeTyping();
-                addMessage(text, 'bot');
-                if (callback) callback();
-            }, 550);
-        }, delay);
+            removeTyping();
+            addBotMessage(INITIAL_MSG);
+            conversationHistory.push({ role: 'assistant', content: INITIAL_MSG });
+            document.getElementById('user-input').focus();
+        }, 600);
     }
 
-    function getRecommendation() {
-        const rec = recommendations[answers.style] || "Jeans. T-Shirt. Sneaker.";
-        return "Empfehlung: " + rec;
-    }
-
-    function handleChoice(value) {
-        if (step < steps.length) {
-            answers[steps[step].key] = value;
-            addMessage(value, 'user');
-            step++;
-
-            if (step < steps.length) {
-                botSay(steps[step].bot, 150, () => {
-                    showButtons(steps[step].buttons, handleChoice);
-                });
-            } else {
-                botSay(getRecommendation(), 150, () => {
-                    showButtons(["Nochmal", "Fertig"], handleEnd);
-                });
-            }
-        }
-    }
-
-    function handleEnd(value) {
-        addMessage(value, 'user');
-        if (value === "Nochmal") {
-            step = 0;
-            Object.keys(answers).forEach(k => delete answers[k]);
-            botSay("OK. Anlass?", 150, () => {
-                showButtons(steps[0].buttons, handleChoice);
-            });
-        } else {
-            clearButtons();
-            botSay("OK.", 150, null);
-        }
-    }
-
-    // Start
-    botSay(steps[0].bot, 500, () => {
-        showButtons(steps[0].buttons, handleChoice);
+    document.getElementById('user-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') handleSend();
     });
+
+    document.getElementById('send-btn').addEventListener('click', handleSend);
+
+    // Init
+    startChat();
 </script>
 </body>
 </html>
