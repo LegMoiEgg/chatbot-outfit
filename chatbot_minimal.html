@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outfit-Bot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: linear-gradient(145deg, #fde8f5 0%, #e8d5f5 40%, #d5e8f5 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .chat-container {
+            width: 450px;
+            height: 650px;
+            background: white;
+            border-radius: 28px;
+            box-shadow: 0 24px 70px rgba(160, 80, 200, 0.18);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #b06aed, #e84dac);
+            padding: 18px 20px;
+            display: flex;
+            align-items: center;
+            gap: 13px;
+        }
+
+        .avatar {
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .header-info h2 {
+            color: white;
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        .header-info p {
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 11.5px;
+            margin-top: 2px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: #fdf8ff;
+        }
+
+        .message-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 9px;
+        }
+
+        .message-row.user {
+            flex-direction: row-reverse;
+        }
+
+        .mini-avatar {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #b06aed, #e84dac);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .bubble {
+            max-width: 74%;
+            padding: 12px 16px;
+            border-radius: 20px;
+            font-size: 13.5px;
+            line-height: 1.55;
+        }
+
+        .bot-bubble {
+            background: white;
+            color: #333;
+            border-bottom-left-radius: 5px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+        }
+
+        .user-bubble {
+            background: linear-gradient(135deg, #b06aed, #e84dac);
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .typing-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 9px;
+        }
+
+        .typing-bubble {
+            background: white;
+            padding: 13px 18px;
+            border-radius: 20px;
+            border-bottom-left-radius: 5px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .typing-dot {
+            width: 7px;
+            height: 7px;
+            background: #c07aee;
+            border-radius: 50%;
+            animation: bounce 1.3s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+            30% { transform: translateY(-7px); opacity: 1; }
+        }
+
+        .chat-buttons {
+            padding: 14px 16px;
+            border-top: 1px solid #f3eaff;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            background: white;
+            min-height: 62px;
+        }
+
+        .choice-btn {
+            background: #f9f0ff;
+            border: 1.5px solid #e5c8ff;
+            color: #8b30cc;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        .choice-btn:hover {
+            background: linear-gradient(135deg, #b06aed, #e84dac);
+            color: white;
+            border-color: transparent;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(176, 106, 237, 0.35);
+        }
+
+        .chat-messages::-webkit-scrollbar { width: 4px; }
+        .chat-messages::-webkit-scrollbar-track { background: #fdf8ff; }
+        .chat-messages::-webkit-scrollbar-thumb { background: #e5c8ff; border-radius: 2px; }
+    </style>
+</head>
+<body>
+<div class="chat-container">
+    <div class="chat-header">
+        <div class="avatar">🤖</div>
+        <div class="header-info">
+            <h2>Bot</h2>
+            <p>Outfit-Assistent • Online</p>
+        </div>
+    </div>
+    <div class="chat-messages" id="messages"></div>
+    <div class="chat-buttons" id="buttons"></div>
+</div>
+
+<script>
+    const answers = {};
+    let step = 0;
+
+    const steps = [
+        {
+            bot: "Hallo. Anlass?",
+            key: "occasion",
+            buttons: ["Arbeit", "Party", "Date", "Alltag"]
+        },
+        {
+            bot: "Farbton?",
+            key: "color",
+            buttons: ["Dunkel", "Hell", "Bunt", "Egal"]
+        },
+        {
+            bot: "Stil?",
+            key: "style",
+            buttons: ["Casual", "Elegant", "Sportlich", "Kreativ"]
+        }
+    ];
+
+    const recommendations = {
+        Casual:    "Jeans. Weißes T-Shirt. Sneaker.",
+        Elegant:   "Blazer. Bluse/Hemd. Anzughose.",
+        Sportlich: "Jogger. Hoodie. Turnschuhe.",
+        Kreativ:   "Statement-Top. Weite Hose. Boots."
+    };
+
+    function addMessage(text, type) {
+        const row = document.createElement('div');
+        row.className = `message-row${type === 'user' ? ' user' : ''}`;
+        if (type === 'bot') {
+            row.innerHTML = `<div class="mini-avatar">🤖</div><div class="bubble bot-bubble">${text}</div>`;
+        } else {
+            row.innerHTML = `<div class="bubble user-bubble">${text}</div>`;
+        }
+        document.getElementById('messages').appendChild(row);
+        document.getElementById('messages').scrollTop = 999999;
+    }
+
+    function showTyping() {
+        const row = document.createElement('div');
+        row.className = 'typing-row';
+        row.id = 'typing';
+        row.innerHTML = `
+            <div class="mini-avatar">🤖</div>
+            <div class="typing-bubble">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        `;
+        document.getElementById('messages').appendChild(row);
+        document.getElementById('messages').scrollTop = 999999;
+    }
+
+    function removeTyping() {
+        const el = document.getElementById('typing');
+        if (el) el.remove();
+    }
+
+    function showButtons(labels, onClick) {
+        const area = document.getElementById('buttons');
+        area.innerHTML = '';
+        labels.forEach(label => {
+            const btn = document.createElement('button');
+            btn.className = 'choice-btn';
+            btn.textContent = label;
+            btn.onclick = () => onClick(label);
+            area.appendChild(btn);
+        });
+    }
+
+    function clearButtons() {
+        document.getElementById('buttons').innerHTML = '';
+    }
+
+    function botSay(text, delay, callback) {
+        clearButtons();
+        setTimeout(() => {
+            showTyping();
+            setTimeout(() => {
+                removeTyping();
+                addMessage(text, 'bot');
+                if (callback) callback();
+            }, 550);
+        }, delay);
+    }
+
+    function getRecommendation() {
+        const rec = recommendations[answers.style] || "Jeans. T-Shirt. Sneaker.";
+        return "Empfehlung: " + rec;
+    }
+
+    function handleChoice(value) {
+        if (step < steps.length) {
+            answers[steps[step].key] = value;
+            addMessage(value, 'user');
+            step++;
+
+            if (step < steps.length) {
+                botSay(steps[step].bot, 150, () => {
+                    showButtons(steps[step].buttons, handleChoice);
+                });
+            } else {
+                botSay(getRecommendation(), 150, () => {
+                    showButtons(["Nochmal", "Fertig"], handleEnd);
+                });
+            }
+        }
+    }
+
+    function handleEnd(value) {
+        addMessage(value, 'user');
+        if (value === "Nochmal") {
+            step = 0;
+            Object.keys(answers).forEach(k => delete answers[k]);
+            botSay("OK. Anlass?", 150, () => {
+                showButtons(steps[0].buttons, handleChoice);
+            });
+        } else {
+            clearButtons();
+            botSay("OK.", 150, null);
+        }
+    }
+
+    // Start
+    botSay(steps[0].bot, 500, () => {
+        showButtons(steps[0].buttons, handleChoice);
+    });
+</script>
+</body>
+</html>
